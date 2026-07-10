@@ -524,7 +524,31 @@ function Invoke-MongrelDBQuery {
         if ($r.rows) { $rows = @($r.rows) }
         if ($r.truncated) { $trunc = [bool]$r.truncated }
     }
-    return @{ Rows = $rows; Truncated = $trunc }
+    # The daemon returns each row as {"row_id":"0","cells":[col_id, value,
+    # col_id, value, ...]} with a flat cells array. Expand it into a per-row
+    # object whose properties are the column ids (as strings) so callers can do
+    # $row.'2'. See mongreldb-server/src/kit.rs KitRow serialization.
+    $decoded = foreach ($row in $rows) { ConvertFrom-MongrelDBRow $row }
+    return @{ Rows = @($decoded); Truncated = $trunc }
+}
+
+# Expand the flat `cells` array of one /kit/query row into a PSCustomObject
+# keyed by column id (as a string), preserving row_id. Cells is flat:
+# [col_id, value, col_id, value, ...] with even indices as column ids.
+function ConvertFrom-MongrelDBRow {
+    param($Row)
+    if ($null -eq $Row) { return $null }
+    $ht = [ordered]@{}
+    if ($Row.PSObject.Properties.Match('row_id').Count -gt 0) { $ht['row_id'] = $Row.row_id }
+    $cells = $Row.cells
+    if ($cells) {
+        $arr = @($cells)
+        for ($i = 0; $i + 1 -lt $arr.Count; $i += 2) {
+            $colId = [string]$arr[$i]
+            $ht[$colId] = $arr[$i + 1]
+        }
+    }
+    return [pscustomobject]$ht
 }
 
 function New-MongrelDBCondition {
