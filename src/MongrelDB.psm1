@@ -156,10 +156,13 @@ function Invoke-MongrelDBRequest {
     }
     # PowerShell 7+ honors -SkipHttpErrorCheck to avoid throwing on non-2xx,
     # letting us read the body. Fall back to the classic try/catch behavior on
-    # Windows PowerShell 5.1.
+    # Windows PowerShell 5.1. -SkipHttpErrorCheck is the only option needed;
+    # -ResponseHeadersVariable is intentionally avoided because it is a dynamic
+    # parameter not present on every PowerShell 7+ build (e.g. the Linux pwsh
+    # used by CI), and passing an unknown parameter splat fails to bind and
+    # breaks every request.
     if ($PSVersionTable.PSVersion.Major -ge 6) {
         $requestParams['SkipHttpErrorCheck'] = $true
-        $requestParams['ResponseHeadersVariable'] = 'respHeaders'
     }
 
     $content = $null

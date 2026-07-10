@@ -41,8 +41,18 @@ function Invoke-Test {
     try {
         & $Body
     } catch {
-        Write-Host ("  FAIL " + $_.InvocationInfo.ScriptLineNumber + ": " + $_.Exception.Message)
-        $script:Fail++
+        # Fail-Test and Skip-Test signal control flow by throwing the sentinel
+        # strings 'test-abort' / 'test-skip'; they have already updated the
+        # counters, so they must NOT be double-counted as failures here.
+        if ($_.Exception.Message -in 'test-abort', 'test-skip') {
+            if ($_.Exception.Message -eq 'test-abort' -and $script:Fail -eq $before) {
+                # Defensive: a bare test-abort with no recorded failure is still a failure.
+                $script:Fail++
+            }
+        } else {
+            Write-Host ("  FAIL " + $_.InvocationInfo.ScriptLineNumber + ": " + $_.Exception.Message)
+            $script:Fail++
+        }
     }
     if ($script:Fail -eq $before) { $script:Pass++ }
 }
