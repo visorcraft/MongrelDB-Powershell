@@ -557,12 +557,14 @@ function New-MongrelDBCondition {
         Build a native query condition. Translates friendly aliases:
         column -> column_id, min/max -> lo/hi, value -> pattern for fm_contains.
     .PARAMETER Kind
-        One of: pk, bitmap_eq, range, fm_contains, is_null, is_not_null.
+        One of: pk, bitmap_eq, range (int64), range_f64 (float64), fm_contains,
+        is_null, is_not_null. Use range_f64 for float64 columns and range for
+        integer columns.
     #>
     [CmdletBinding()]
     [OutputType([hashtable])]
     param(
-        [Parameter(Mandatory)][ValidateSet('pk','bitmap_eq','range','fm_contains','is_null','is_not_null')]
+        [Parameter(Mandatory)][ValidateSet('pk','bitmap_eq','range','range_f64','fm_contains','is_null','is_not_null')]
         [string]$Kind,
         [long]$ColumnId,
         $Value,
@@ -570,6 +572,8 @@ function New-MongrelDBCondition {
         [double]$Hi,
         [switch]$LoSet,
         [switch]$HiSet,
+        [switch]$LoInclusive,
+        [switch]$HiInclusive,
         [switch]$IntSet
     )
     switch ($Kind) {
@@ -584,6 +588,14 @@ function New-MongrelDBCondition {
             if ($LoSet) { $d['lo'] = $Lo }
             if ($HiSet) { $d['hi'] = $Hi }
             return @{ range = $d }
+        }
+        'range_f64' {
+            $d = [ordered]@{ column_id = $ColumnId }
+            if ($LoSet) { $d['lo'] = $Lo }
+            if ($HiSet) { $d['hi'] = $Hi }
+            if ($LoInclusive) { $d['lo_inclusive'] = $true }
+            if ($HiInclusive) { $d['hi_inclusive'] = $true }
+            return @{ range_f64 = $d }
         }
         'fm_contains' {
             return @{ fm_contains = @{ column_id = $ColumnId; pattern = $Value } }

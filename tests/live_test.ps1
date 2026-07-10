@@ -175,12 +175,13 @@ Invoke-Test 'test_query_by_pk' {
 # 6. query by range
 Invoke-Test 'test_query_range' {
     Assert-Daemon
-    $cols = @( (New-IntCol 1 'id' $true), (New-IntCol 2 'amount' $false) )
+    $cols = @( (New-IntCol 1 'id' $true), (New-FloatCol 2 'amount' $false) )
     New-FreshTable 'ps_range' $cols
-    Add-MongrelDBRow -Table 'ps_range' -Cells @{ 1 = 1; 2 = 50 } -Client $script:DBC
-    Add-MongrelDBRow -Table 'ps_range' -Cells @{ 1 = 2; 2 = 120 } -Client $script:DBC
-    Add-MongrelDBRow -Table 'ps_range' -Cells @{ 1 = 3; 2 = 200 } -Client $script:DBC
-    $cond = New-MongrelDBCondition -Kind range -ColumnId 2 -Lo 100 -Hi 150 -LoSet -HiSet
+    Add-MongrelDBRow -Table 'ps_range' -Cells @{ 1 = 1; 2 = 50.0 } -Client $script:DBC
+    Add-MongrelDBRow -Table 'ps_range' -Cells @{ 1 = 2; 2 = 120.0 } -Client $script:DBC
+    Add-MongrelDBRow -Table 'ps_range' -Cells @{ 1 = 3; 2 = 200.0 } -Client $script:DBC
+    # Column 2 is float64, so use range_f64 (range targets integer columns).
+    $cond = New-MongrelDBCondition -Kind range_f64 -ColumnId 2 -Lo 100.0 -Hi 150.0 -LoSet -HiSet -LoInclusive -HiInclusive
     $res = Invoke-MongrelDBQuery -Table 'ps_range' -Conditions $cond -Client $script:DBC
     if ($res.Rows.Count -ne 1) { Fail-Test "expected exactly 1 matching row, got $($res.Rows.Count)" }
     if ($res.Truncated) { Fail-Test 'result should not be truncated' }
