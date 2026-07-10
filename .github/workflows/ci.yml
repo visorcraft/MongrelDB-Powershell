@@ -1,0 +1,93 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+    tags: ['v*']
+  pull_request:
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build & test
+    runs-on: ubuntu-latest
+    env:
+      SERVER_VERSION: '0.46.2'
+      MONGRELDB_URL: http://127.0.0.1:8453
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Install PowerShell (pwsh)
+        run: |
+          # pwsh is preinstalled on ubuntu-latest; verify it is available.
+          pwsh --version
+
+      - name: Validate module manifest
+        run: |
+          pwsh -NoProfile -Command "Test-ModuleManifest -Path src/MongrelDB.psd1"
+
+      - name: Cache mongreldb-server binary
+        id: server-cache
+        uses: actions/cache@v6
+        with:
+          path: bin/mongreldb-server
+          key: mongreldb-server-linux-x64-${{ env.SERVER_VERSION }}
+
+      - name: Download mongreldb-server
+        if: steps.server-cache.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p bin
+          curl -fsSL -o bin/mongreldb-server \
+            "https://github.com/visorcraft/MongrelDB/releases/download/v${SERVER_VERSION}/mongreldb-server-linux-x64"
+          chmod +x bin/mongreldb-server
+          ./bin/mongreldb-server --help | head -n 1 || true
+
+      - name: Start mongreldb-server
+        run: |
+          rm -rf /tmp/mongreldb-data
+          ./bin/mongreldb-server /tmp/mongreldb-data --port 8453 > /tmp/mongreldb-server.log 2>&1 &
+          echo $! > /tmp/mongreldb-server.pid
+          # Wait for the daemon to become healthy (max ~30s).
+          for i in $(seq 1 30); do
+            if curl -sf http://127.0.0.1:8453/health >/dev/null 2>&1; then
+              echo "mongreldb-server is healthy"
+              break
+            fi
+            sleep 1
+          done
+          curl -sf http://127.0.0.1:8453/health >/dev/null || (cat /tmp/mongreldb-server.log && exit 1)
+
+      - name: Run wire-shape unit tests (offline)
+        run: |
+          pwsh -NoProfile -File tests/wire_shape_test.ps1
+
+      - name: Run live integration tests
+        env:
+          MONGRELDB_URL: http://127.0.0.1:8453
+        run: |
+          pwsh -NoProfile -File tests/live_test.ps1
+
+      - name: Run examples
+        run: |
+          for ex in examples/*.ps1; do
+            echo "=== Running $ex ==="
+            pwsh -NoProfile -File "$ex"
+            code=$?
+            if [ $code -ne 0 ]; then echo "FAILED: $ex (exit $code)"; exit 1; fi
+          done
+
+      - name: Dump server log on failure
+        if: failure()
+        run: cat /tmp/mongreldb-server.log
+
+      - name: Stop mongreldb-server
+        if: always()
+        run: |
+          if [ -f /tmp/mongreldb-server.pid ]; then
+            kill "$(cat /tmp/mongreldb-server.pid)" 2>/dev/null || true
+          fi
