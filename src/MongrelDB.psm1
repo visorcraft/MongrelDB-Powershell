@@ -188,6 +188,7 @@ function Invoke-MongrelDBRequest {
             $cat = Get-MongrelDBCategory -StatusCode $status
             $envelope = ConvertFrom-MongrelDBErrorEnvelope -Body $errBody
             $message = if ($envelope -and $envelope.Message) { $envelope.Message } else { "Server error ($status)" }
+            if ($message -match '^not found:') { $cat = 'NotFound' }
             $code = if ($envelope -and $envelope.Code) { $envelope.Code } else { $null }
             throw (New-MongrelDBException $message -Category $cat -StatusCode $status -ErrorCode $code)
         }
@@ -207,6 +208,7 @@ function Invoke-MongrelDBRequest {
         $cat = Get-MongrelDBCategory -StatusCode $status
         $envelope = ConvertFrom-MongrelDBErrorEnvelope -Body $respBody
         $message = if ($envelope -and $envelope.Message) { $envelope.Message } else { "Server error ($status)" }
+        if ($message -match '^not found:') { $cat = 'NotFound' }
         $code = if ($envelope -and $envelope.Code) { $envelope.Code } else { $null }
         throw (New-MongrelDBException $message -Category $cat -StatusCode $status -ErrorCode $code)
     }
