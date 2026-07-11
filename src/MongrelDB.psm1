@@ -312,6 +312,21 @@ function Get-MongrelDBHealth {
     }
 }
 
+function Get-MongrelDBHistoryRetention {
+    param($Client)
+    Invoke-MongrelDBRequest -Method 'GET' -Path 'history/retention' -Client $Client
+}
+
+function Get-MongrelDBEarliestRetainedEpoch {
+    param($Client)
+    (Get-MongrelDBHistoryRetention -Client $Client).earliest_retained_epoch
+}
+
+function Set-MongrelDBHistoryRetention {
+    param([Parameter(Mandatory)][long]$Epochs, $Client)
+    Invoke-MongrelDBRequest -Method 'PUT' -Path 'history/retention' -Body @{ history_retention_epochs = $Epochs } -Client $Client
+}
+
 function Get-MongrelDBTable {
     <#
     .SYNOPSIS

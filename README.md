@@ -252,6 +252,10 @@ Contributions are welcome. Please:
 3. Keep the code pure PowerShell, no external module dependencies.
 4. Use approved Verb-Noun verbs for all exported functions.
 
+## History retention
+
+Use `Get-MongrelDBHistoryRetention`, `Set-MongrelDBHistoryRetention`, and `Get-MongrelDBEarliestRetainedEpoch` with MongrelDB 0.47.1+.
+
 ## License
 
 Dual-licensed under the **MIT License** or the **Apache License, Version 2.0**,
