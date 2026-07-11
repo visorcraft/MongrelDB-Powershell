@@ -131,7 +131,8 @@ You should see the row count of 2.
 | `Get-MongrelDBHealth` | GET `/health`; returns `$true` when the daemon answers. |
 | `New-MongrelDBTable` | POST `/kit/create_table`. Column `id`s are the on-wire identifiers. |
 | `enum_variants` | Optional. Constrains a text column to a fixed value set; server-enforced on commit, surfaces as a `Conflict` exception. Omit = absent. |
-| `default_value` | Optional. Default value string for the column. Omit = absent. |
+| `default_value` | Optional JSON scalar. Supply the type expected by the column. Omit = absent. |
+| `default_expr` | Optional dynamic `now` or `uuid` default. |
 | `Add-MongrelDBRow` | Single-op transaction: POST `/kit/txn` with one `put` op. `cells` is flattened to `[col_id, val, ...]`. |
 | `Invoke-MongrelDBQuery` | Builds a `/kit/query` body. Conditions push down to native indexes. |
 | `-Projection @(1,2)` | Server returns only those column ids, saving bandwidth. |

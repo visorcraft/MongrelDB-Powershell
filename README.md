@@ -154,7 +154,8 @@ New-MongrelDBTable -Name 'orders' -Columns $cols
 ```
 
 `enum_variants` is an array of strings; omitting it means "absent".
-`default_value` is a single string; omitting it means "absent". The constraint
+`default_value` is any JSON scalar; supply the column's expected type. Use
+`default_expr = 'now'` or `'uuid'` for a dynamic default. The constraint
 is enforced server-side, so a row whose value falls outside the listed variants
 surfaces as a `Conflict` exception on `Add-MongrelDBRow` /
 `Invoke-MongrelDBTransaction`.

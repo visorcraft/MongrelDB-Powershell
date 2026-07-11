@@ -342,8 +342,11 @@ function ConvertTo-MongrelDBCreateTableBody {
         if ($c.enum_variants -and $c.enum_variants.Count -gt 0) {
             $d['enum_variants'] = @($c.enum_variants)
         }
-        if ($c.default_value) {
-            $d['default_value'] = [string]$c.default_value
+        if ($c.ContainsKey('default_value')) {
+            $d['default_value'] = $c.default_value
+        }
+        if ($c.ContainsKey('default_expr')) {
+            $d['default_expr'] = [string]$c.default_expr
         }
         $colsList += ,$d
     }

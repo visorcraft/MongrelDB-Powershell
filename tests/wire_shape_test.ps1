@@ -50,7 +50,9 @@ Invoke-Test 'test_create_table_body' {
     $cols = @(
         @{ id = 1; name = 'id'; ty = 'int64'; primary_key = $true; nullable = $false },
         @{ id = 4; name = 'status'; ty = 'enum'; primary_key = $false; nullable = $false;
-           enum_variants = @('active','inactive','paused'); default_value = 'active' }
+           enum_variants = @('active','inactive','paused'); default_value = 'active' },
+        @{ id = 5; name = 'retries'; ty = 'int64'; primary_key = $false; nullable = $false; default_value = 3 },
+        @{ id = 6; name = 'created_at'; ty = 'timestamp'; primary_key = $false; nullable = $false; default_expr = 'now' }
     )
     $constraints = @{
         checks = @(@{ id = 1; name = 'ck_status'; expr = @{ IsNotNull = 4 } })
@@ -65,6 +67,8 @@ Invoke-Test 'test_create_table_body' {
     if ($json -notmatch '"primary_key":true') { Fail-Test 'body missing primary_key' }
     if ($json -notmatch 'enum_variants') { Fail-Test 'body missing enum_variants' }
     if ($json -notmatch '"default_value":"active"') { Fail-Test 'body missing default_value' }
+    if ($json -notmatch '"default_value":3') { Fail-Test 'numeric default_value became a string' }
+    if ($json -notmatch '"default_expr":"now"') { Fail-Test 'body missing default_expr' }
     if ($json -notmatch '"checks":') { Fail-Test 'body missing constraints.checks' }
     if ($json -notmatch '"IsNotNull":4') { Fail-Test 'body missing check expression' }
 }
