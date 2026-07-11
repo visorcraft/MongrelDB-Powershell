@@ -100,6 +100,9 @@ function ConvertFrom-MongrelDBErrorEnvelope {
     }
     if ($obj.error) {
         $e = $obj.error
+        if ($e -is [string]) {
+            return @{ Message = $e; Code = $null; OpIndex = $null }
+        }
         return @{
             Message  = if ($e.message) { $e.message } else { $Body }
             Code     = if ($e.code) { $e.code } else { $null }
