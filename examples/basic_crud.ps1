@@ -45,7 +45,7 @@ try {
         @{ id = 1; name = 'id';     ty = 'int64';   primary_key = $true;  nullable = $false },
         @{ id = 2; name = 'name';   ty = 'varchar'; primary_key = $false; nullable = $false },
         @{ id = 3; name = 'score';  ty = 'float64'; primary_key = $false; nullable = $false; default_value = '0.0' },
-        @{ id = 4; name = 'status'; ty = 'varchar'; primary_key = $false; nullable = $false; enum_variants = $statusVariants; default_value = 'active' }
+        @{ id = 4; name = 'status'; ty = 'enum'; primary_key = $false; nullable = $false; enum_variants = $statusVariants; default_value = 'active' }
     )
     $tid = New-MongrelDBTable -Name $table -Columns $cols -Client $db
     $tableCreated = $true

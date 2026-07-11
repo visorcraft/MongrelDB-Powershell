@@ -62,7 +62,10 @@ $cols = @(
     @{ id = 2; name = 'customer'; ty = 'varchar'; primary_key = $false; nullable = $false },
     @{ id = 3; name = 'amount';   ty = 'float64'; primary_key = $false; nullable = $false }
 )
-New-MongrelDBTable -Name 'orders' -Columns $cols
+$constraints = @{
+    checks = @(@{ id = 1; name = 'ck_status'; expr = @{ IsNotNull = 3 } })
+}
+New-MongrelDBTable -Name 'orders' -Columns $cols -Constraints $constraints
 
 # Insert rows (cells map column id to value).
 Add-MongrelDBRow -Table 'orders' -Cells @{ 1 = 1; 2 = 'Alice'; 3 = 99.50 }
@@ -139,12 +142,12 @@ column at create time. Both are omitted from the wire JSON when left unset, so
 existing schemas are unaffected.
 
 ```powershell
-# A varchar column whose values must come from this fixed set.
+# An enum column whose values must come from this fixed set.
 # Wire emit: "enum_variants": ["active","inactive","paused"]
 $cols = @(
     @{ id = 1; name = 'id';     ty = 'int64';   primary_key = $true;  nullable = $false },
     @{ id = 2; name = 'customer'; ty = 'varchar'; primary_key = $false; nullable = $false },
-    @{ id = 3; name = 'status'; ty = 'varchar'; primary_key = $false; nullable = $false;
+    @{ id = 3; name = 'status'; ty = 'enum'; primary_key = $false; nullable = $false;
        enum_variants = @('active','inactive','paused'); default_value = 'active' }
 )
 New-MongrelDBTable -Name 'orders' -Columns $cols
@@ -155,6 +158,8 @@ New-MongrelDBTable -Name 'orders' -Columns $cols
 is enforced server-side, so a row whose value falls outside the listed variants
 surfaces as a `Conflict` exception on `Add-MongrelDBRow` /
 `Invoke-MongrelDBTransaction`.
+Table checks use the daemon's `constraints.checks` JSON shape and are forwarded
+unchanged through `-Constraints`.
 
 ## SQL
 

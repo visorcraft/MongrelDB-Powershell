@@ -45,20 +45,28 @@ function Fail-Test {
 # ── Tests ─────────────────────────────────────────────────────────────────
 
 # The create_table body must carry name, columns[] with id/name/ty/primary_key/
-# nullable, plus optional enum_variants and default_value when set.
+# nullable, optional enum_variants/default_value, and table checks.
 Invoke-Test 'test_create_table_body' {
     $cols = @(
         @{ id = 1; name = 'id'; ty = 'int64'; primary_key = $true; nullable = $false },
-        @{ id = 4; name = 'status'; ty = 'varchar'; primary_key = $false; nullable = $false;
+        @{ id = 4; name = 'status'; ty = 'enum'; primary_key = $false; nullable = $false;
            enum_variants = @('active','inactive','paused'); default_value = 'active' }
     )
-    $body = @{ name = 'orders'; columns = $cols }
+    $constraints = @{
+        checks = @(@{ id = 1; name = 'ck_status'; expr = @{ IsNotNull = 4 } })
+    }
+    $body = & (Get-Module MongrelDB) {
+        param($Name, $Columns, $Constraints)
+        ConvertTo-MongrelDBCreateTableBody -Name $Name -Columns $Columns -Constraints $Constraints
+    } 'orders' $cols $constraints
     $json = $body | ConvertTo-Json -Depth 20 -Compress
     if ($json -notmatch '"name":"orders"') { Fail-Test 'body missing table name' }
     if ($json -notmatch '"ty":"int64"') { Fail-Test 'body missing column type' }
     if ($json -notmatch '"primary_key":true') { Fail-Test 'body missing primary_key' }
     if ($json -notmatch 'enum_variants') { Fail-Test 'body missing enum_variants' }
     if ($json -notmatch '"default_value":"active"') { Fail-Test 'body missing default_value' }
+    if ($json -notmatch '"checks":') { Fail-Test 'body missing constraints.checks' }
+    if ($json -notmatch '"IsNotNull":4') { Fail-Test 'body missing check expression' }
 }
 
 # The batch txn body must wrap ops in {"ops":[...]} and carry an idempotency

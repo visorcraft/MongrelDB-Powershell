@@ -324,23 +324,11 @@ function Get-MongrelDBTable {
     return @()
 }
 
-function New-MongrelDBTable {
-    <#
-    .SYNOPSIS
-        Create a table. Returns the assigned table id (0 if none reported).
-    .PARAMETER Name
-        Table name.
-    .PARAMETER Columns
-        Array of column hashtables: @{ id=1; name='id'; ty='int64';
-        primary_key=$true; nullable=$false; enum_variants=@('a','b');
-        default_value='a' }.
-    #>
-    [CmdletBinding()]
-    [OutputType([long])]
+function ConvertTo-MongrelDBCreateTableBody {
     param(
         [Parameter(Mandatory)][string]$Name,
         [Parameter(Mandatory)]$Columns,
-        $Client
+        [hashtable]$Constraints
     )
     $colsList = @()
     foreach ($c in $Columns) {
@@ -360,6 +348,32 @@ function New-MongrelDBTable {
         $colsList += ,$d
     }
     $body = @{ name = $Name; columns = $colsList }
+    if ($null -ne $Constraints) { $body['constraints'] = $Constraints }
+    return $body
+}
+
+function New-MongrelDBTable {
+    <#
+    .SYNOPSIS
+        Create a table. Returns the assigned table id (0 if none reported).
+    .PARAMETER Name
+        Table name.
+    .PARAMETER Columns
+        Array of column hashtables: @{ id=1; name='id'; ty='int64';
+        primary_key=$true; nullable=$false; enum_variants=@('a','b');
+        default_value='a' }.
+    .PARAMETER Constraints
+        Optional table constraints hashtable, including a checks array.
+    #>
+    [CmdletBinding()]
+    [OutputType([long])]
+    param(
+        [Parameter(Mandatory)][string]$Name,
+        [Parameter(Mandatory)]$Columns,
+        $Client,
+        [hashtable]$Constraints
+    )
+    $body = ConvertTo-MongrelDBCreateTableBody -Name $Name -Columns $Columns -Constraints $Constraints
     $r = Invoke-MongrelDBRequest -Method 'POST' -Path 'kit/create_table' -Body $body -Client $Client
     if ($r -and $r.table_id) { return [long]$r.table_id }
     return 0
