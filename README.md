@@ -72,7 +72,7 @@ Add-MongrelDBRow -Table 'orders' -Cells @{ 1 = 1; 2 = 'Alice'; 3 = 99.50 }
 Add-MongrelDBRow -Table 'orders' -Cells @{ 1 = 2; 2 = 'Bob'; 3 = 150.00 }
 
 # Query with a native index condition (learned-range index).
-$cond = New-MongrelDBCondition -Kind range -ColumnId 3 -Lo 100.0 -LoSet
+$cond = New-MongrelDBCondition -Kind range_f64 -ColumnId 3 -Lo 100.0 -LoSet
 $res = Invoke-MongrelDBQuery -Table 'orders' -Conditions $cond -Limit 100
 Write-Host "rows: $($res.Rows.Count)"
 
@@ -126,7 +126,7 @@ Conditions push down to the engine's specialized indexes. Build them with
 $bitmap = New-MongrelDBCondition -Kind bitmap_eq -ColumnId 2 -Value 'Alice'
 
 # Range query (learned-range index)
-$range = New-MongrelDBCondition -Kind range -ColumnId 3 -Lo 50.0 -LoSet -Hi 150.0 -HiSet
+$range = New-MongrelDBCondition -Kind range_f64 -ColumnId 3 -Lo 50.0 -LoSet -Hi 150.0 -HiSet
 
 $res = Invoke-MongrelDBQuery -Table 'orders' -Conditions @($bitmap, $range) `
         -Projection @(1, 3) -Limit 100
@@ -154,13 +154,29 @@ New-MongrelDBTable -Name 'orders' -Columns $cols
 ```
 
 `enum_variants` is an array of strings; omitting it means "absent".
-`default_value` is any JSON scalar; supply the column's expected type. Use
-`default_expr = 'now'` or `'uuid'` for a dynamic default. The constraint
-is enforced server-side, so a row whose value falls outside the listed variants
+`default_value` is any JSON scalar; supply the column's expected type. An
+explicit `$null` stays a static null, a missing key means no default, and
+literal `"now"` / `"uuid"` strings in `default_value` are static — use
+`default_expr = 'now'` or `'uuid'` for a dynamic default. The constraint is
+enforced server-side, so a row whose value falls outside the listed variants
 surfaces as a `Conflict` exception on `Add-MongrelDBRow` /
 `Invoke-MongrelDBTransaction`.
 Table checks use the daemon's `constraints.checks` JSON shape and are forwarded
 unchanged through `-Constraints`.
+
+All supported static-default shapes pass through with their original JSON types:
+
+```powershell
+$cols = @(
+    @{ id = 1; name = 'message'; ty = 'varchar'; primary_key = $false; nullable = $false; default_value = 'none' },
+    @{ id = 2; name = 'count';   ty = 'int64';   primary_key = $false; nullable = $false; default_value = 0 },
+    @{ id = 3; name = 'active';  ty = 'bool';    primary_key = $false; nullable = $false; default_value = $true },
+    @{ id = 4; name = 'extra';   ty = 'varchar'; primary_key = $false; nullable = $true;  default_value = $null },
+    @{ id = 5; name = 'tag';     ty = 'varchar'; primary_key = $false; nullable = $false; default_value = 'now' },
+    @{ id = 6; name = 'created'; ty = 'timestamp'; primary_key = $false; nullable = $false; default_expr = 'now' }
+)
+New-MongrelDBTable -Name 'events' -Columns $cols
+```
 
 ## SQL
 
@@ -206,6 +222,9 @@ try {
 | Function | Description |
 |----------|-------------|
 | `Get-MongrelDBHealth` | Check daemon health |
+| `Get-MongrelDBHistoryRetention` | Get the history-retention window and earliest retained epoch |
+| `Get-MongrelDBEarliestRetainedEpoch` | Get the oldest epoch still queryable with `AS OF EPOCH` |
+| `Set-MongrelDBHistoryRetention` | Set the history-retention window; requires admin |
 | `Get-MongrelDBTable` | List table names |
 | `New-MongrelDBTable` | Create a table |
 | `Remove-MongrelDBTable` | Drop a table |
@@ -254,7 +273,20 @@ Contributions are welcome. Please:
 
 ## History retention
 
-Use `Get-MongrelDBHistoryRetention`, `Set-MongrelDBHistoryRetention`, and `Get-MongrelDBEarliestRetainedEpoch` with MongrelDB 0.48.0+.
+History retention controls how far back `AS OF EPOCH` time-travel queries can
+read. Use these functions with `mongreldb-server` 0.48.0+:
+
+```powershell
+$window   = (Get-MongrelDBHistoryRetention).history_retention_epochs
+$earliest = Get-MongrelDBEarliestRetainedEpoch
+
+# Increase the window. Requires admin auth. Increasing retention cannot restore
+# history already pruned past the previous earliest epoch.
+Set-MongrelDBHistoryRetention -Epochs ($window + 10)
+
+# Query historical state.
+$rows = Invoke-MongrelDBSql -Sql "SELECT id FROM orders AS OF EPOCH $earliest"
+```
 
 ## License
 

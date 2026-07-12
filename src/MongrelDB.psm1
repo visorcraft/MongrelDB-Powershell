@@ -10,10 +10,13 @@
     external dependencies.
 
     Function naming follows PowerShell Verb-Noun conventions (approved verbs):
-      Connect-MongrelDB, Get-MongrelDBHealth, New-MongrelDBTable,
-      Remove-MongrelDBTable, Get-MongrelDBCount, Add-MongrelDBRow,
-      Set-MongrelDBRow (upsert), Remove-MongrelDBRow, Invoke-MongrelDBQuery,
-      Invoke-MongrelDBTransaction, Invoke-MongrelDBSql, Get-MongrelDBSchema.
+      Connect-MongrelDB, Get-MongrelDBHealth,
+      Get-MongrelDBHistoryRetention, Get-MongrelDBEarliestRetainedEpoch,
+      Set-MongrelDBHistoryRetention,
+      New-MongrelDBTable, Remove-MongrelDBTable, Get-MongrelDBCount,
+      Add-MongrelDBRow, Set-MongrelDBRow (upsert), Remove-MongrelDBRow,
+      Invoke-MongrelDBQuery, Invoke-MongrelDBTransaction, Invoke-MongrelDBSql,
+      Get-MongrelDBSchema.
 
     Error handling: methods throw a typed exception (MongrelDB.MongrelDBException)
     with a Category property ('Auth','NotFound','Conflict','Query','Network')
@@ -320,17 +323,38 @@ function Get-MongrelDBHealth {
 }
 
 function Get-MongrelDBHistoryRetention {
+    <#
+    .SYNOPSIS
+        Get the current history-retention window and oldest retained epoch.
+    #>
+    [CmdletBinding()]
+    [OutputType([PSCustomObject])]
     param($Client)
     Invoke-MongrelDBRequest -Method 'GET' -Path 'history/retention' -Client $Client
 }
 
 function Get-MongrelDBEarliestRetainedEpoch {
+    <#
+    .SYNOPSIS
+        Get the oldest epoch still readable with AS OF EPOCH.
+    #>
+    [CmdletBinding()]
+    [OutputType([long])]
     param($Client)
     (Get-MongrelDBHistoryRetention -Client $Client).earliest_retained_epoch
 }
 
 function Set-MongrelDBHistoryRetention {
-    param([Parameter(Mandatory)][long]$Epochs, $Client)
+    <#
+    .SYNOPSIS
+        Set the history-retention window in epochs. Requires admin auth.
+    #>
+    [CmdletBinding()]
+    [OutputType([PSCustomObject])]
+    param(
+        [Parameter(Mandatory)][long]$Epochs,
+        $Client
+    )
     Invoke-MongrelDBRequest -Method 'PUT' -Path 'history/retention' -Body @{ history_retention_epochs = $Epochs } -Client $Client
 }
 
@@ -696,7 +720,9 @@ function Get-MongrelDBSchemaFor {
 # Export the public surface (approved verbs only).
 Export-ModuleMember -Function `
     Connect-MongrelDB, Disconnect-MongrelDB, `
-    Get-MongrelDBHealth, Get-MongrelDBTable, `
+    Get-MongrelDBHealth, `
+    Get-MongrelDBHistoryRetention, Get-MongrelDBEarliestRetainedEpoch, Set-MongrelDBHistoryRetention, `
+    Get-MongrelDBTable, `
     New-MongrelDBTable, Remove-MongrelDBTable, Get-MongrelDBCount, `
     Add-MongrelDBRow, Set-MongrelDBRow, Remove-MongrelDBRow, `
     Invoke-MongrelDBTransaction, `

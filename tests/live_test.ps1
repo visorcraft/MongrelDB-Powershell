@@ -9,10 +9,11 @@
     Point at an already-running daemon with the MONGRELDB_URL environment
     variable. By default this connects to http://127.0.0.1:8453.
 
-    The 14-operation conformance matrix mirrors the other official clients:
-    health, create_table, drop_table, count, put, upsert, delete (by row id),
-    delete_by_pk, query (pk), query (range), transaction (batch commit),
-    table_names, schema, schema_for, sql, idempotency_key, error not_found.
+    The 16-operation conformance matrix mirrors the other official clients:
+    health, create_table_and_count, put_and_count, upsert, query (pk),
+    query (range), transaction (batch commit), delete_by_pk, delete (by row id),
+    string values, sql, table_names, schema_for, error not_found,
+    history retention, idempotency_key.
 
 .LICENSE
     MIT OR Apache-2.0.
@@ -123,7 +124,7 @@ function New-FreshTable {
     return $tid
 }
 
-# ── Tests (14-operation conformance matrix) ───────────────────────────────
+# ── Tests (16-operation conformance matrix) ───────────────────────────────
 
 # 1. health
 Invoke-Test 'test_health' {
@@ -185,7 +186,7 @@ Invoke-Test 'test_query_by_pk' {
 # 6. query by range
 Invoke-Test 'test_query_range' {
     Assert-Daemon
-    $cols = @( (New-IntCol 1 'id' $true), (New-FloatCol 2 'amount' $false) )
+    $cols = @( (New-IntCol 1 'id' $true), (New-FloatCol 2 'amount') )
     New-FreshTable 'ps_range' $cols
     Add-MongrelDBRow -Table 'ps_range' -Cells @{ 1 = 1; 2 = 50.0 } -Client $script:DBC
     Add-MongrelDBRow -Table 'ps_range' -Cells @{ 1 = 2; 2 = 120.0 } -Client $script:DBC
@@ -296,7 +297,41 @@ Invoke-Test 'test_error_not_found' {
     }
 }
 
-# 15. idempotency key
+# 15. history retention getters/setter + AS OF EPOCH query
+Invoke-Test 'test_history_retention' {
+    Assert-Daemon
+    $original = Get-MongrelDBHistoryRetention -Client $script:DBC
+    $originalEpochs = $original.history_retention_epochs
+    if ($originalEpochs -le 0) { Fail-Test 'original retention must be positive' }
+    $tbl = $null
+
+    try {
+        # Use a tight window so the earliest retained epoch advances past zero.
+        $set = Set-MongrelDBHistoryRetention -Epochs 1 -Client $script:DBC
+        if ($set.history_retention_epochs -ne 1) { Fail-Test 'set retention did not return 1' }
+
+        $cols = @( (New-IntCol 1 'id' $true), (New-VarcharCol 2 'name') )
+        $tbl = 'ps_retention_' + [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
+        New-FreshTable $tbl $cols
+        Add-MongrelDBRow -Table $tbl -Cells @{ 1 = 1; 2 = 'Alice' } -Client $script:DBC
+        Add-MongrelDBRow -Table $tbl -Cells @{ 1 = 2; 2 = 'Bob' } -Client $script:DBC
+
+        $earliest = Get-MongrelDBEarliestRetainedEpoch -Client $script:DBC
+        if ($earliest -le 0) { Fail-Test 'earliest retained epoch must be positive' }
+
+        $rows = Invoke-MongrelDBSql -Sql "SELECT id FROM $tbl AS OF EPOCH $earliest" -Client $script:DBC
+        # ConvertFrom-Json unwraps a single-element array, so accept either an
+        # array or a single row object.
+        if (-not $rows) { Fail-Test 'AS OF EPOCH query returned no rows' }
+        $count = if ($rows -is [array]) { $rows.Count } else { 1 }
+        if ($count -lt 1) { Fail-Test 'expected at least one historical row' }
+    } finally {
+        Set-MongrelDBHistoryRetention -Epochs $originalEpochs -Client $script:DBC | Out-Null
+        try { Remove-MongrelDBTable -Name $tbl -Client $script:DBC } catch {}
+    }
+}
+
+# 16. idempotency key
 Invoke-Test 'test_idempotency_key' {
     Assert-Daemon
     $cols = @( (New-IntCol 1 'id' $true) )

@@ -57,7 +57,7 @@ try {
 
     # Range query: 60 <= score <= 90 (both inclusive). The score column is
     # float64, so use range_f64 (range targets integer columns).
-    $rangeCond = New-MongrelDBCondition -Kind range_f64 -ColumnId 3 -Lo 60 -Hi 90 -LoSet -HiSet -LoInclusive -HiInclusive
+    $rangeCond = New-MongrelDBCondition -Kind range_f64 -ColumnId 3 -Lo 60.0 -Hi 90.0 -LoSet -HiSet -LoInclusive -HiInclusive
     $res = Invoke-MongrelDBQuery -Table $table -Conditions $rangeCond -Client $db
     Write-Host "  range [60, 90] on score: $($res.Rows.Count) rows"
     foreach ($row in $res.Rows) { Write-Host "    $([string]::Join(', ', ($row.PSObject.Properties | ForEach-Object { "$($_.Name)=$($_.Value)" })))" }

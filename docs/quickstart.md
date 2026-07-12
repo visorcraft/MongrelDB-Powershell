@@ -92,11 +92,11 @@ if (-not (Get-MongrelDBHealth)) {
 # 3. Create a table. Two optional fields extend the schema:
 #    - enum_variants: a fixed set of allowed values for a text column
 #      (server-enforced on commit).
-#    - default_value: a string applied when a row omits the column.
+#    - default_value: a JSON scalar applied when a row omits the column.
 $cols = @(
     @{ id = 1; name = 'id';       ty = 'int64';   primary_key = $true;  nullable = $false },
     @{ id = 2; name = 'customer'; ty = 'varchar'; primary_key = $false; nullable = $false },
-    @{ id = 3; name = 'amount';   ty = 'float64'; primary_key = $false; nullable = $false; default_value = '0.0' },
+    @{ id = 3; name = 'amount';   ty = 'float64'; primary_key = $false; nullable = $false; default_value = 0.0 },
     @{ id = 4; name = 'status';   ty = 'varchar'; primary_key = $false; nullable = $false;
        enum_variants = @('active','inactive','paused'); default_value = 'active' }
 )
@@ -107,7 +107,7 @@ Add-MongrelDBRow -Table 'orders' -Cells @{ 1 = 1; 2 = 'Alice'; 3 = 99.5; 4 = 'ac
 Add-MongrelDBRow -Table 'orders' -Cells @{ 1 = 2; 2 = 'Bob'; 3 = 150.0; 4 = 'inactive' }
 
 # 5. Query with a native index condition. Projection selects column ids 1,2.
-$cond = New-MongrelDBCondition -Kind range -ColumnId 3 -Lo 100.0 -LoSet
+$cond = New-MongrelDBCondition -Kind range_f64 -ColumnId 3 -Lo 100.0 -LoSet
 $res = Invoke-MongrelDBQuery -Table 'orders' -Conditions $cond -Projection @(1, 2) -Limit 100
 Write-Host "rows: $($res.Rows.Count)"
 
@@ -139,7 +139,35 @@ You should see the row count of 2.
 | `-Limit 100` | Caps the result; check the `Truncated` property afterward. |
 | `Get-MongrelDBCount` | GET `/tables/{name}/count`. |
 
-## 6. Common pitfalls
+## 6. Static defaults and history retention
+
+`default_value` can be any JSON scalar. Explicit `$null` stays a static null, a
+missing key means no default, and literal `"now"` / `"uuid"` strings are static
+— use `default_expr` for dynamic `now` / `uuid` defaults:
+
+```powershell
+$cols = @(
+    @{ id = 1; name = 'message'; ty = 'varchar'; primary_key = $false; nullable = $false; default_value = 'none' },
+    @{ id = 2; name = 'count';   ty = 'int64';   primary_key = $false; nullable = $false; default_value = 0 },
+    @{ id = 3; name = 'active';  ty = 'bool';    primary_key = $false; nullable = $false; default_value = $true },
+    @{ id = 4; name = 'extra';   ty = 'varchar'; primary_key = $false; nullable = $true;  default_value = $null },
+    @{ id = 5; name = 'tag';     ty = 'varchar'; primary_key = $false; nullable = $false; default_value = 'now' },
+    @{ id = 6; name = 'created'; ty = 'timestamp'; primary_key = $false; nullable = $false; default_expr = 'now' }
+)
+New-MongrelDBTable -Name 'events' -Columns $cols
+```
+
+History retention controls how far back `AS OF EPOCH` queries can read:
+
+```powershell
+$window   = (Get-MongrelDBHistoryRetention).history_retention_epochs
+$earliest = Get-MongrelDBEarliestRetainedEpoch
+
+Set-MongrelDBHistoryRetention -Epochs ($window + 10)
+$rows = Invoke-MongrelDBSql -Sql "SELECT id FROM orders AS OF EPOCH $earliest"
+```
+
+## 7. Common pitfalls
 
 **Using the column name instead of the column id.** Every on-wire API uses the
 numeric `id` from `New-MongrelDBTable`, never the `name`. Conditions take the
