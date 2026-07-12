@@ -352,10 +352,41 @@ function Set-MongrelDBHistoryRetention {
     [CmdletBinding()]
     [OutputType([PSCustomObject])]
     param(
-        [Parameter(Mandatory)][long]$Epochs,
+        [Parameter(Mandatory)]$Epochs,
         $Client
     )
-    Invoke-MongrelDBRequest -Method 'PUT' -Path 'history/retention' -Body @{ history_retention_epochs = $Epochs } -Client $Client
+    # The server's epoch counter is an unsigned 64-bit value, but [long] is
+    # signed 64-bit. PowerShell would otherwise silently truncate or wrap an
+    # out-of-range value during parameter binding, so validate explicitly and
+    # reject anything outside the signed 64-bit range (mirrors the PHP client's
+    # coerceU64 guard).
+    if ($null -eq $Epochs) {
+        throw (New-MongrelDBException 'Epochs must not be null' -Category 'InvalidArg')
+    }
+    $asLong = 0L
+    if ($Epochs -is [long] -or $Epochs -is [int]) {
+        $asLong = [long]$Epochs
+    } elseif ($Epochs -is [decimal]) {
+        if ($Epochs -gt [decimal][long]::MaxValue -or $Epochs -lt [decimal][long]::MinValue) {
+            throw (New-MongrelDBException "Epochs value $Epochs exceeds the signed 64-bit range" -Category 'InvalidArg')
+        }
+        $asLong = [long]$Epochs
+    } elseif ($Epochs -is [double] -or $Epochs -is [float] -or $Epochs -is [single]) {
+        if ($Epochs -gt [double][long]::MaxValue -or $Epochs -lt [double][long]::MinValue) {
+            throw (New-MongrelDBException "Epochs value $Epochs exceeds the signed 64-bit range" -Category 'InvalidArg')
+        }
+        $asLong = [long]$Epochs
+    } else {
+        $parsed = 0L
+        if (-not [long]::TryParse([string]$Epochs, [ref]$parsed)) {
+            throw (New-MongrelDBException "Epochs must be an integer, got: $Epochs" -Category 'InvalidArg')
+        }
+        $asLong = $parsed
+    }
+    if ($asLong -lt 0) {
+        throw (New-MongrelDBException 'Epochs must be non-negative' -Category 'InvalidArg')
+    }
+    Invoke-MongrelDBRequest -Method 'PUT' -Path 'history/retention' -Body @{ history_retention_epochs = $asLong } -Client $Client
 }
 
 function Get-MongrelDBTable {

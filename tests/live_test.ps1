@@ -124,6 +124,22 @@ function New-FreshTable {
     return $tid
 }
 
+# Search [Lo, Hi] for an epoch where the row with the given primary key holds
+# the expected value. Returns the first matching epoch, or 0 if none is found.
+# Mirrors the Go client's findEpochWithValue helper.
+function Find-EpochWithValue {
+    param([string]$Table, [long]$Pk, [long]$Want, [long]$Lo, [long]$Hi)
+    for ($e = $Lo; $e -le $Hi; $e++) {
+        try {
+            $r = Invoke-MongrelDBSql -Sql "SELECT value FROM $Table AS OF EPOCH $e WHERE id = $Pk" -Client $script:DBC
+        } catch { continue }
+        if (-not $r) { continue }
+        $row = if ($r -is [array]) { $r[0] } else { $r }
+        if ($row -and [long]$row.value -eq $Want) { return [long]$e }
+    }
+    return 0L
+}
+
 # ── Tests (16-operation conformance matrix) ───────────────────────────────
 
 # 1. health
@@ -331,7 +347,53 @@ Invoke-Test 'test_history_retention' {
     }
 }
 
-# 16. idempotency key
+# 16. history retention AS OF EPOCH read after an update
+Invoke-Test 'test_history_retention_asof_epoch_update' {
+    Assert-Daemon
+    $original = Get-MongrelDBHistoryRetention -Client $script:DBC
+    $originalEpochs = $original.history_retention_epochs
+    if ($originalEpochs -le 0) { Fail-Test 'original retention must be positive' }
+    $tbl = $null
+
+    try {
+        # Wide window so the insert epoch stays retained after the update.
+        $wide = Set-MongrelDBHistoryRetention -Epochs 10000 -Client $script:DBC
+        $window = [long]$wide.history_retention_epochs
+
+        $cols = @( (New-IntCol 1 'id' $true), (New-IntCol 2 'value' $false) )
+        $tbl = 'ps_retasof_' + [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
+        New-FreshTable $tbl $cols
+
+        Add-MongrelDBRow -Table $tbl -Cells @{ 1 = 1; 2 = 10 } -Client $script:DBC
+
+        $lo = [long](Get-MongrelDBEarliestRetainedEpoch -Client $script:DBC)
+        if ($lo -le 0) { Fail-Test 'earliest retained epoch must be positive after insert' }
+
+        # Find the epoch at which the original value (10) is visible.
+        $insertEpoch = Find-EpochWithValue -Table $tbl -Pk 1 -Want 10 -Lo $lo -Hi ($lo + $window)
+        if ($insertEpoch -le 0) { Fail-Test 'could not find an epoch where the original value is visible' }
+
+        # Update the row to a new value.
+        Set-MongrelDBRow -Table $tbl -Cells @{ 1 = 1; 2 = 20 } -UpdateCells @{ 2 = 20 } -Client $script:DBC | Out-Null
+
+        # Current read sees the updated value.
+        $cur = Invoke-MongrelDBSql -Sql "SELECT value FROM $tbl WHERE id = 1" -Client $script:DBC
+        $curRow = if ($cur -is [array]) { $cur[0] } else { $cur }
+        if (-not $curRow) { Fail-Test 'current read returned no rows' }
+        if ([long]$curRow.value -ne 20) { Fail-Test "expected current value 20, got $([long]$curRow.value)" }
+
+        # Historical read at the insert epoch sees the original value.
+        $hist = Invoke-MongrelDBSql -Sql "SELECT value FROM $tbl AS OF EPOCH $insertEpoch WHERE id = 1" -Client $script:DBC
+        $histRow = if ($hist -is [array]) { $hist[0] } else { $hist }
+        if (-not $histRow) { Fail-Test 'historical read returned no rows' }
+        if ([long]$histRow.value -ne 10) { Fail-Test "expected historical value 10 at epoch $insertEpoch, got $([long]$histRow.value)" }
+    } finally {
+        Set-MongrelDBHistoryRetention -Epochs $originalEpochs -Client $script:DBC | Out-Null
+        try { Remove-MongrelDBTable -Name $tbl -Client $script:DBC } catch {}
+    }
+}
+
+# 17. idempotency key
 Invoke-Test 'test_idempotency_key' {
     Assert-Daemon
     $cols = @( (New-IntCol 1 'id' $true) )

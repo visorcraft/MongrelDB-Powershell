@@ -154,6 +154,65 @@ Invoke-Test 'test_set_history_retention_put' {
     if ($r.history_retention_epochs -ne 200) { Fail-Test 'wrong response retention' }
 }
 
+# A non-2xx response must surface as a typed exception with the right Category
+# and StatusCode, rather than being swallowed or returned as data.
+Invoke-Test 'test_retention_get_propagates_500_as_query' {
+    $global:MockRequest = $null
+    $global:MockResponse = @{ StatusCode = 500; Content = '{"error":{"message":"boom","code":"INTERNAL"}}' }
+    $client = @{ Url = 'http://127.0.0.1:8453'; AuthHeader = $null }
+    $threw = $false; $cat = $null; $status = $null; $code = $null
+    try {
+        Get-MongrelDBHistoryRetention -Client $client | Out-Null
+    } catch {
+        $threw = $true
+        $cat = $_.Exception.Category
+        $status = $_.Exception.StatusCode
+        $code = $_.Exception.ErrorCode
+    }
+    if (-not $threw) { Fail-Test '500 response must throw' }
+    if ($cat -ne 'Query') { Fail-Test "expected Category=Query, got $cat" }
+    if ($status -ne 500) { Fail-Test "expected StatusCode=500, got $status" }
+    if ($code -ne 'INTERNAL') { Fail-Test "expected ErrorCode=INTERNAL, got $code" }
+}
+
+# A 404 on the PUT path must map to the NotFound category.
+Invoke-Test 'test_retention_put_propagates_404_as_not_found' {
+    $global:MockRequest = $null
+    $global:MockResponse = @{ StatusCode = 404; Content = '{"error":{"message":"no such db","code":"NOT_FOUND"}}' }
+    $client = @{ Url = 'http://127.0.0.1:8453'; AuthHeader = $null }
+    $threw = $false; $cat = $null; $status = $null
+    try {
+        Set-MongrelDBHistoryRetention -Epochs 50 -Client $client | Out-Null
+    } catch {
+        $threw = $true
+        $cat = $_.Exception.Category
+        $status = $_.Exception.StatusCode
+    }
+    if (-not $threw) { Fail-Test '404 response must throw' }
+    if ($cat -ne 'NotFound') { Fail-Test "expected Category=NotFound, got $cat" }
+    if ($status -ne 404) { Fail-Test "expected StatusCode=404, got $status" }
+}
+
+# Values exceeding [long]::MaxValue must be rejected with Category=InvalidArg
+# instead of being silently truncated. No request should be emitted.
+Invoke-Test 'test_set_history_retention_rejects_u64_overflow' {
+    $global:MockRequest = $null
+    $global:MockResponse = @{ StatusCode = 200; Content = '{}' }
+    $client = @{ Url = 'http://127.0.0.1:8453'; AuthHeader = $null }
+    # [decimal] preserves the exact one-past-[long]::MaxValue value.
+    $tooBig = ([decimal][long]::MaxValue) + 1
+    $threw = $false; $cat = $null
+    try {
+        Set-MongrelDBHistoryRetention -Epochs $tooBig -Client $client | Out-Null
+    } catch {
+        $threw = $true
+        $cat = $_.Exception.Category
+    }
+    if (-not $threw) { Fail-Test 'must reject values exceeding [long]::MaxValue' }
+    if ($cat -ne 'InvalidArg') { Fail-Test "expected Category=InvalidArg, got $cat" }
+    if ($global:MockRequest) { Fail-Test 'must not send a request for an out-of-range epoch' }
+}
+
 # The batch txn body must wrap ops in {"ops":[...]} and carry an idempotency
 # key when one is supplied.
 Invoke-Test 'test_txn_body_with_key' {
