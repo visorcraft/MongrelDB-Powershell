@@ -607,12 +607,14 @@ function Invoke-MongrelDBQuery {
         $Conditions,
         [int[]]$Projection,
         [long]$Limit,
-        $Client
+        $Client,
+        [long]$Offset
     )
     $body = [ordered]@{ table = $Table }
     if ($Conditions) { $body['conditions'] = @($Conditions) }
     if ($Projection) { $body['projection'] = @($Projection) }
     if ($Limit -gt 0) { $body['limit'] = $Limit }
+    if ($Offset -ne 0) { $body['offset'] = $Offset }
 
     $r = Invoke-MongrelDBRequest -Method 'POST' -Path 'kit/query' -Body $body -Client $Client
     $rows = @()

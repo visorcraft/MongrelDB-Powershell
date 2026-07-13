@@ -233,6 +233,7 @@ Invoke-Test 'test_query_body' {
         conditions = @( @{ range = @{ column_id = 3; lo = 100.0; hi = 500.0 } } )
         projection = @(1, 2)
         limit = 100
+        offset = 12000
     }
     $json = $body | ConvertTo-Json -Depth 20 -Compress
     if ($json -notmatch '"table":"orders"') { Fail-Test 'query body missing table' }
@@ -240,6 +241,7 @@ Invoke-Test 'test_query_body' {
     if ($json -notmatch 'column_id') { Fail-Test 'query body missing column_id' }
     if ($json -notmatch 'projection') { Fail-Test 'query body missing projection' }
     if ($json -notmatch '"limit":100') { Fail-Test 'query body missing limit' }
+    if ($json -notmatch '"offset":12000') { Fail-Test 'query body missing offset' }
 }
 
 # Table names with special characters must be percent-encoded in path segments.

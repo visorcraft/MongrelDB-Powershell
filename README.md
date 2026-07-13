@@ -233,7 +233,7 @@ try {
 | `Set-MongrelDBRow` | Upsert a row |
 | `Remove-MongrelDBRow` | Delete by row id or primary key |
 | `Invoke-MongrelDBTransaction` | Commit a batch atomically |
-| `Invoke-MongrelDBQuery` | Run a native query |
+| `Invoke-MongrelDBQuery -Limit N -Offset N` | Run a paged native query |
 | `New-MongrelDBCondition` | Build a query condition |
 | `Invoke-MongrelDBSql` | Execute SQL |
 | `Get-MongrelDBSchema` | Full schema catalog |
