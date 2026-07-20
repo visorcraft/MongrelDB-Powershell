@@ -10,7 +10,7 @@
 RootModule        = 'MongrelDB.psm1'
 
 # Version number of this module.
-ModuleVersion     = '0.60.3'
+ModuleVersion     = '0.61.1'
 
 # Supported PSEditions.
 CompatiblePSEditions = @('Core', 'Desktop')
