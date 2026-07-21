@@ -102,6 +102,23 @@ Invoke-Test 'test_create_table_body' {
     if ($json -notmatch '"IsNotNull":4') { Fail-Test 'body missing check expression' }
 }
 
+Invoke-Test 'test_create_table_ann_backend_options' {
+    $indexes = @(@{
+        name = 'ann'; column_id = 2; kind = 'ann'; options = @{ ann = @{
+            algorithm = 'diskann'; quantization = 'dense';
+            diskann = @{ r = 64; l = 128; beam_width = 8; alpha = 120 }
+        } }
+    })
+    $body = & (Get-Module MongrelDB) {
+        param($Indexes)
+        ConvertTo-MongrelDBCreateTableBody -Name vectors -Columns @() -Indexes $Indexes
+    } $indexes
+    $json = $body | ConvertTo-Json -Depth 20 -Compress
+    if ($json -notmatch '"algorithm":"diskann"') { Fail-Test 'ANN algorithm missing' }
+    if ($json -notmatch '"quantization":"dense"') { Fail-Test 'ANN quantization missing' }
+    if ($json -notmatch '"beam_width":8') { Fail-Test 'DiskANN options missing' }
+}
+
 # Literal "now" and "uuid" values in default_value must stay static strings,
 # not be reinterpreted as dynamic default_expr values.
 Invoke-Test 'test_literal_now_uuid_default_value' {
