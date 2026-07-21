@@ -405,7 +405,8 @@ function ConvertTo-MongrelDBCreateTableBody {
     param(
         [Parameter(Mandatory)][string]$Name,
         [Parameter(Mandatory)]$Columns,
-        [hashtable]$Constraints
+        [hashtable]$Constraints,
+        $Indexes
     )
     $colsList = @()
     foreach ($c in $Columns) {
@@ -425,10 +426,14 @@ function ConvertTo-MongrelDBCreateTableBody {
         if ($c.ContainsKey('default_expr')) {
             $d['default_expr'] = [string]$c.default_expr
         }
+        if ($c.ContainsKey('embedding_source')) {
+            $d['embedding_source'] = $c.embedding_source
+        }
         $colsList += ,$d
     }
     $body = @{ name = $Name; columns = $colsList }
     if ($null -ne $Constraints) { $body['constraints'] = $Constraints }
+    if ($null -ne $Indexes) { $body['indexes'] = $Indexes }
     return $body
 }
 
@@ -451,9 +456,10 @@ function New-MongrelDBTable {
         [Parameter(Mandatory)][string]$Name,
         [Parameter(Mandatory)]$Columns,
         $Client,
-        [hashtable]$Constraints
+        [hashtable]$Constraints,
+        $Indexes
     )
-    $body = ConvertTo-MongrelDBCreateTableBody -Name $Name -Columns $Columns -Constraints $Constraints
+    $body = ConvertTo-MongrelDBCreateTableBody -Name $Name -Columns $Columns -Constraints $Constraints -Indexes $Indexes
     $r = Invoke-MongrelDBRequest -Method 'POST' -Path 'kit/create_table' -Body $body -Client $Client
     if ($r -and $r.table_id) { return [long]$r.table_id }
     return 0
@@ -656,15 +662,17 @@ function New-MongrelDBCondition {
         Build a native query condition. Translates friendly aliases:
         column -> column_id, min/max -> lo/hi, value -> pattern for fm_contains.
     .PARAMETER Kind
-        One of: pk, bitmap_eq, range (int64), range_f64 (float64), fm_contains,
-        is_null, is_not_null. Use range_f64 for float64 columns and range for
-        integer columns.
+        Any server JsonCondition name. Typed convenience parameters remain for
+        pk, bitmap_eq, range, range_f64, fm_contains, is_null, and is_not_null.
+    .PARAMETER Parameters
+        Complete parameter map for any condition, including ANN, sparse,
+        MinHash, bitmap_in, and fm_contains_all.
     #>
     [CmdletBinding()]
     [OutputType([hashtable])]
     param(
-        [Parameter(Mandatory)][ValidateSet('pk','bitmap_eq','range','range_f64','fm_contains','is_null','is_not_null')]
-        [string]$Kind,
+        [Parameter(Mandatory)][string]$Kind,
+        [hashtable]$Parameters,
         [long]$ColumnId,
         $Value,
         [double]$Lo,
@@ -675,6 +683,9 @@ function New-MongrelDBCondition {
         [switch]$HiInclusive,
         [switch]$IntSet
     )
+    if ($null -ne $Parameters) {
+        return @{ $Kind = $Parameters }
+    }
     switch ($Kind) {
         'pk' {
             return @{ pk = @{ value = $Value } }
@@ -704,6 +715,9 @@ function New-MongrelDBCondition {
         }
         'is_not_null' {
             return @{ is_not_null = @{ column_id = $ColumnId } }
+        }
+        default {
+            throw "condition kind '$Kind' requires -Parameters"
         }
     }
 }

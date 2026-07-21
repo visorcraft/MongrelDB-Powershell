@@ -226,7 +226,7 @@ try {
 | `Get-MongrelDBEarliestRetainedEpoch` | Get the oldest epoch still queryable with `AS OF EPOCH` |
 | `Set-MongrelDBHistoryRetention` | Set the history-retention window; requires admin |
 | `Get-MongrelDBTable` | List table names |
-| `New-MongrelDBTable` | Create a table |
+| `New-MongrelDBTable -Indexes ...` | Create a table with optional constraints and all index definitions |
 | `Remove-MongrelDBTable` | Drop a table |
 | `Get-MongrelDBCount` | Row count |
 | `Add-MongrelDBRow` | Insert a row |
@@ -234,7 +234,7 @@ try {
 | `Remove-MongrelDBRow` | Delete by row id or primary key |
 | `Invoke-MongrelDBTransaction` | Commit a batch atomically |
 | `Invoke-MongrelDBQuery -Limit N -Offset N` | Run a paged native query |
-| `New-MongrelDBCondition` | Build a query condition |
+| `New-MongrelDBCondition -Kind name -Parameters map` | Build any condition, including ANN, sparse, and MinHash |
 | `Invoke-MongrelDBSql` | Execute SQL |
 | `Get-MongrelDBSchema` | Full schema catalog |
 | `Get-MongrelDBSchemaFor` | Single-table descriptor |
