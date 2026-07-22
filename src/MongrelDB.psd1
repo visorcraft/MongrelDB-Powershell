@@ -10,7 +10,7 @@
 RootModule        = 'MongrelDB.psm1'
 
 # Version number of this module.
-ModuleVersion     = '0.63.1'
+ModuleVersion     = '0.64.0'
 
 # Supported PSEditions.
 CompatiblePSEditions = @('Core', 'Desktop')
@@ -83,7 +83,14 @@ FunctionsToExport = @(
     'New-MongrelDBCondition',
     'Invoke-MongrelDBSql',
     'Get-MongrelDBSchema',
-    'Get-MongrelDBSchemaFor'
+    'Get-MongrelDBSchemaFor',
+    'ConvertFrom-MongrelDBCommitHlc',
+    'ConvertFrom-MongrelDBQueryStatus',
+    'Get-MongrelDBCommitHlc',
+    'Get-MongrelDBSerializationState',
+    'Invoke-MongrelDBRetrieveText',
+    'Get-MongrelDBQueryStatus',
+    'Stop-MongrelDBQuery'
 )
 
 # Cmdlets to export from this module.

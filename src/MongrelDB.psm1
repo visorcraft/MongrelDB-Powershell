@@ -722,6 +722,222 @@ function New-MongrelDBCondition {
     }
 }
 
+# ── Public API: durable recovery + retrieve_text (0.64+) ──────────────────
+
+function ConvertFrom-MongrelDBCommitHlc {
+    <#
+    .SYNOPSIS
+        Structural HLC from durable recovery. Returns $null when absent.
+    #>
+    [CmdletBinding()]
+    param($Raw)
+    if ($null -eq $Raw) { return $null }
+    $phys = $null
+    if ($Raw -is [hashtable]) {
+        if ($Raw.ContainsKey('physical_micros')) { $phys = $Raw['physical_micros'] }
+    } elseif ($Raw.PSObject.Properties.Name -contains 'physical_micros') {
+        $phys = $Raw.physical_micros
+    }
+    if ($null -eq $phys) { return $null }
+    $logical = 0
+    $node = 0
+    if ($Raw -is [hashtable]) {
+        if ($Raw.ContainsKey('logical')) { $logical = [int]$Raw['logical'] }
+        if ($Raw.ContainsKey('node_tiebreaker')) { $node = [int]$Raw['node_tiebreaker'] }
+    } else {
+        if ($Raw.PSObject.Properties.Name -contains 'logical') { $logical = [int]$Raw.logical }
+        if ($Raw.PSObject.Properties.Name -contains 'node_tiebreaker') { $node = [int]$Raw.node_tiebreaker }
+    }
+    return [pscustomobject]@{
+        physical_micros = [int64]$phys
+        logical = $logical
+        node_tiebreaker = $node
+    }
+}
+
+function ConvertFrom-MongrelDBDurableOutcome {
+    [CmdletBinding()]
+    param($Raw)
+    if ($null -eq $Raw) {
+        return [pscustomobject]@{
+            committed = $null
+            last_commit_epoch = $null
+            last_commit_hlc = $null
+            serialization = ''
+            serialization_state = $null
+            terminal_state = $null
+        }
+    }
+    $hlcRaw = $null
+    if ($Raw -is [hashtable] -and $Raw.ContainsKey('last_commit_hlc')) {
+        $hlcRaw = $Raw['last_commit_hlc']
+    } elseif ($Raw.PSObject.Properties.Name -contains 'last_commit_hlc') {
+        $hlcRaw = $Raw.last_commit_hlc
+    }
+    $get = {
+        param($k)
+        if ($Raw -is [hashtable]) {
+            if ($Raw.ContainsKey($k)) { return $Raw[$k] }
+            return $null
+        }
+        if ($Raw.PSObject.Properties.Name -contains $k) { return $Raw.$k }
+        return $null
+    }
+    return [pscustomobject]@{
+        committed = & $get 'committed'
+        last_commit_epoch = & $get 'last_commit_epoch'
+        last_commit_hlc = ConvertFrom-MongrelDBCommitHlc -Raw $hlcRaw
+        serialization = [string](if ($null -eq (& $get 'serialization')) { '' } else { & $get 'serialization' })
+        serialization_state = & $get 'serialization_state'
+        terminal_state = & $get 'terminal_state'
+    }
+}
+
+function ConvertFrom-MongrelDBQueryStatus {
+    <#
+    .SYNOPSIS
+        Decode GET /queries/{id} body into a structural status (0.64+).
+    #>
+    [CmdletBinding()]
+    param($Raw)
+    if ($null -eq $Raw) { $Raw = @{} }
+    $get = {
+        param($k)
+        if ($Raw -is [hashtable]) {
+            if ($Raw.ContainsKey($k)) { return $Raw[$k] }
+            return $null
+        }
+        if ($Raw.PSObject.Properties.Name -contains $k) { return $Raw.$k }
+        return $null
+    }
+    $outcome = ConvertFrom-MongrelDBDurableOutcome -Raw (& $get 'outcome')
+    $durableRaw = & $get 'durable'
+    $durable = if ($null -ne $durableRaw) { ConvertFrom-MongrelDBDurableOutcome -Raw $durableRaw } else { $null }
+    return [pscustomobject]@{
+        query_id = [string](if ($null -eq (& $get 'query_id')) { '' } else { & $get 'query_id' })
+        status = [string](if ($null -eq (& $get 'status')) { '' } else { & $get 'status' })
+        state = [string](if ($null -eq (& $get 'state')) { '' } else { & $get 'state' })
+        server_state = [string](if ($null -ne (& $get 'server_state')) { & $get 'server_state' } elseif ($null -ne (& $get 'state')) { & $get 'state' } else { '' })
+        terminal_state = & $get 'terminal_state'
+        committed = & $get 'committed'
+        last_commit_epoch = & $get 'last_commit_epoch'
+        last_commit_hlc = ConvertFrom-MongrelDBCommitHlc -Raw (& $get 'last_commit_hlc')
+        outcome = $outcome
+        durable = $durable
+        raw = $Raw
+    }
+}
+
+function Get-MongrelDBCommitHlc {
+    <#
+    .SYNOPSIS
+        Authoritative HLC from a query status object: durable → outcome → top-level.
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]$Status
+    )
+    if ($null -ne $Status.durable -and $null -ne $Status.durable.last_commit_hlc) {
+        return $Status.durable.last_commit_hlc
+    }
+    if ($null -ne $Status.outcome -and $null -ne $Status.outcome.last_commit_hlc) {
+        return $Status.outcome.last_commit_hlc
+    }
+    return $Status.last_commit_hlc
+}
+
+function Get-MongrelDBSerializationState {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]$Status
+    )
+    if ($null -ne $Status.durable) {
+        if ($Status.durable.serialization_state -and [string]$Status.durable.serialization_state) {
+            return [string]$Status.durable.serialization_state
+        }
+        if ($Status.durable.serialization -and [string]$Status.durable.serialization) {
+            return [string]$Status.durable.serialization
+        }
+    }
+    if ($null -ne $Status.outcome) {
+        if ($Status.outcome.serialization_state -and [string]$Status.outcome.serialization_state) {
+            return [string]$Status.outcome.serialization_state
+        }
+        if ($Status.outcome.serialization) {
+            return [string]$Status.outcome.serialization
+        }
+    }
+    return ''
+}
+
+function Invoke-MongrelDBRetrieveText {
+    <#
+    .SYNOPSIS
+        Text → embed → ANN retrieve (POST kit/retrieve_text, 0.64+).
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)][string]$Table,
+        [Parameter(Mandatory)][int]$EmbeddingColumn,
+        [Parameter(Mandatory)][string]$Text,
+        [int]$K = 0,
+        [long]$DeadlineMs = 0,
+        [long]$MaxWork = 0,
+        $Client
+    )
+    if (-not $Table) { throw (New-MongrelDBException -Message 'table is required' -Category 'Query') }
+    if (-not $Text) { throw (New-MongrelDBException -Message 'text is required' -Category 'Query') }
+    $body = @{
+        table = $Table
+        embedding_column = $EmbeddingColumn
+        text = $Text
+    }
+    if ($K -gt 0) { $body.k = $K }
+    if ($DeadlineMs -gt 0) { $body.deadline_ms = $DeadlineMs }
+    if ($MaxWork -gt 0) { $body.max_work = $MaxWork }
+    $data = Invoke-MongrelDBRequest -Method 'POST' -Path 'kit/retrieve_text' -Body $body -Client $Client
+    if ($null -eq $data) {
+        return [pscustomobject]@{ hits = @(); provenance = @{} }
+    }
+    return $data
+}
+
+function Get-MongrelDBQueryStatus {
+    <#
+    .SYNOPSIS
+        Retained SQL status for durable recovery (GET queries/{query_id}).
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)][string]$QueryId,
+        $Client
+    )
+    if (-not $QueryId) { throw (New-MongrelDBException -Message 'query_id is required' -Category 'Query') }
+    $seg = ConvertTo-EncodedSegment -Segment $QueryId
+    $data = Invoke-MongrelDBRequest -Method 'GET' -Path "queries/$seg" -Client $Client
+    if ($null -eq $data) {
+        throw (New-MongrelDBException -Message 'query status response was not a JSON object' -Category 'Query')
+    }
+    return ConvertFrom-MongrelDBQueryStatus -Raw $data
+}
+
+function Stop-MongrelDBQuery {
+    <#
+    .SYNOPSIS
+        Request cancellation of a running SQL query (POST queries/{id}/cancel).
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)][string]$QueryId,
+        $Client
+    )
+    if (-not $QueryId) { throw (New-MongrelDBException -Message 'query_id is required' -Category 'Query') }
+    $seg = ConvertTo-EncodedSegment -Segment $QueryId
+    $data = Invoke-MongrelDBRequest -Method 'POST' -Path "queries/$seg/cancel" -Body @{} -Client $Client
+    if ($null -eq $data) { return @{} }
+    return $data
+}
+
 # ── Public API: SQL & schema ──────────────────────────────────────────────
 
 function Invoke-MongrelDBSql {
@@ -774,4 +990,7 @@ Export-ModuleMember -Function `
     Add-MongrelDBRow, Set-MongrelDBRow, Remove-MongrelDBRow, `
     Invoke-MongrelDBTransaction, `
     Invoke-MongrelDBQuery, New-MongrelDBCondition, `
-    Invoke-MongrelDBSql, Get-MongrelDBSchema, Get-MongrelDBSchemaFor
+    Invoke-MongrelDBSql, Get-MongrelDBSchema, Get-MongrelDBSchemaFor, `
+    ConvertFrom-MongrelDBCommitHlc, ConvertFrom-MongrelDBQueryStatus, `
+    Get-MongrelDBCommitHlc, Get-MongrelDBSerializationState, `
+    Invoke-MongrelDBRetrieveText, Get-MongrelDBQueryStatus, Stop-MongrelDBQuery
