@@ -20,7 +20,7 @@
 
 | Surface | Package | Install |
 |---|---|---|
-| PowerShell module | `MongrelDB` | `Import-Module ./src/MongrelDB.psd1` |
+| PowerShell module | `MongrelDB` | not on the PowerShell Gallery - clone this repo, then `Import-Module ./src/MongrelDB.psd1` |
 
 ## Requirements
 
